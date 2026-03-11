@@ -52,9 +52,16 @@ export interface AddressQuery {
 }
 
 export interface LighterConfig {
-  apiKey: string
-  apiSecret: string
+  /** Pre-generated auth token (if provided, privateKey is not needed) */
+  apiKey?: string
+  /** Lighter private key for auto token generation (40-byte hex) */
+  privateKey?: string
+  /** API key index (required when using privateKey) */
+  apiKeyIndex?: number
+  /** Account index */
   accountIndex?: number
+  /** Unused, kept for interface compatibility */
+  apiSecret?: string
 }
 
 export interface AsterConfig {

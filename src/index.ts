@@ -31,3 +31,6 @@ export { StandXClient } from './exchanges/standx'
 
 // Utilities
 export { isValidEvmAddress, isValidSolanaAddress } from './utils'
+
+// Signers
+export { createLighterAuthToken } from './signers/lighter-signer'

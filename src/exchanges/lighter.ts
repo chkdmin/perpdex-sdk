@@ -1,6 +1,7 @@
 import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, LighterConfig } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId } from '../utils'
+import { createLighterAuthToken } from '../signers/lighter-signer'
 
 const LIGHTER_API_BASE = 'https://mainnet.zklighter.elliot.ai'
 
@@ -64,8 +65,19 @@ export class LighterClient extends BaseClient {
   constructor(config: LighterConfig, baseUrl = LIGHTER_API_BASE) {
     super()
     this.baseUrl = baseUrl
-    this.apiKey = config.apiKey
     this.accountIndex = config.accountIndex ?? 0
+
+    if (config.apiKey) {
+      this.apiKey = config.apiKey
+    } else if (config.privateKey) {
+      this.apiKey = createLighterAuthToken(
+        config.privateKey,
+        this.accountIndex,
+        config.apiKeyIndex ?? 0
+      )
+    } else {
+      this.apiKey = ''
+    }
   }
 
   private async fetchWithAuth(url: string): Promise<Response> {
