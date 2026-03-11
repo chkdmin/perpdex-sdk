@@ -1,7 +1,6 @@
 import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, LighterConfig } from '../types'
 import { BaseClient } from '../base/base-client'
-import { generatePositionId } from '../utils'
-import { createLighterAuthToken } from '../signers/lighter-signer'
+import { generatePositionId, isValidEvmAddress } from '../utils'
 
 const LIGHTER_API_BASE = 'https://mainnet.zklighter.elliot.ai'
 
@@ -60,24 +59,32 @@ export class LighterClient extends BaseClient {
   readonly exchangeId: ExchangeId = 'lighter'
   private baseUrl: string
   private apiKey: string
-  private accountIndex: number
+  private accountIndex: number | null
 
-  constructor(config: LighterConfig, baseUrl = LIGHTER_API_BASE) {
+  constructor(config?: LighterConfig, baseUrl = LIGHTER_API_BASE) {
     super()
     this.baseUrl = baseUrl
-    this.accountIndex = config.accountIndex ?? 0
+    this.accountIndex = config?.accountIndex ?? null
 
-    if (config.apiKey) {
+    if (config?.apiKey) {
       this.apiKey = config.apiKey
-    } else if (config.privateKey) {
+    } else if (config?.privateKey) {
+      const { createLighterAuthToken } = require('../signers/lighter-signer')
       this.apiKey = createLighterAuthToken(
         config.privateKey,
-        this.accountIndex,
+        this.accountIndex ?? 0,
         config.apiKeyIndex ?? 0
       )
     } else {
       this.apiKey = ''
     }
+  }
+
+  private async fetchPublic(url: string): Promise<Response> {
+    return fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    })
   }
 
   private async fetchWithAuth(url: string): Promise<Response> {
@@ -91,6 +98,35 @@ export class LighterClient extends BaseClient {
     }
 
     return fetch(url, { method: 'GET', headers })
+  }
+
+  private buildAccountUrl(query?: AddressQuery): string {
+    const address = query?.address
+    if (address && isValidEvmAddress(address)) {
+      return `${this.baseUrl}/api/v1/account?by=l1_address&value=${address}`
+    }
+    if (this.accountIndex != null) {
+      return `${this.baseUrl}/api/v1/account?by=index&value=${this.accountIndex}`
+    }
+    return ''
+  }
+
+  private async fetchAccount(query?: AddressQuery): Promise<LighterAccountResponse> {
+    const url = this.buildAccountUrl(query)
+    if (!url) {
+      throw new Error('Either an EVM address (via query) or accountIndex (via config) is required')
+    }
+
+    const isAddressMode = !!query?.address && isValidEvmAddress(query.address)
+    const response = isAddressMode
+      ? await this.fetchPublic(url)
+      : await this.fetchWithAuth(url)
+
+    if (!response.ok) {
+      throw new Error(`Lighter API error: ${response.status}`)
+    }
+
+    return response.json()
   }
 
   private async getActiveOrders(
@@ -129,17 +165,9 @@ export class LighterClient extends BaseClient {
     return ordersMap
   }
 
-  async getPositions(_query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
+  async getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
     try {
-      const response = await this.fetchWithAuth(
-        `${this.baseUrl}/api/v1/account?by=index&value=${this.accountIndex}`
-      )
-
-      if (!response.ok) {
-        throw new Error(`Lighter API error: ${response.status}`)
-      }
-
-      const data: LighterAccountResponse = await response.json()
+      const data = await this.fetchAccount(query)
 
       if (data.code !== 200 || !data.accounts || data.accounts.length === 0) {
         return this.createSuccessResponse([])
@@ -195,17 +223,9 @@ export class LighterClient extends BaseClient {
     return slTpMap
   }
 
-  async getAccountBalance(_query?: AddressQuery): Promise<ExchangeResponse<AccountBalance>> {
+  async getAccountBalance(query?: AddressQuery): Promise<ExchangeResponse<AccountBalance>> {
     try {
-      const response = await this.fetchWithAuth(
-        `${this.baseUrl}/api/v1/account?by=index&value=${this.accountIndex}`
-      )
-
-      if (!response.ok) {
-        throw new Error(`Lighter API error: ${response.status}`)
-      }
-
-      const data: LighterAccountResponse = await response.json()
+      const data = await this.fetchAccount(query)
 
       if (data.code !== 200 || !data.accounts || data.accounts.length === 0) {
         return this.createSuccessResponse({

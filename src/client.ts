@@ -10,7 +10,11 @@ import { StandXClient } from './exchanges/standx'
 
 export function createClient<T extends ExchangeId>(
   exchangeId: T,
-  ...args: ExchangeConfigMap[T] extends undefined ? [] : [config: ExchangeConfigMap[T]]
+  ...args: ExchangeConfigMap[T] extends undefined
+    ? []
+    : undefined extends ExchangeConfigMap[T]
+      ? [config?: NonNullable<ExchangeConfigMap[T]>]
+      : [config: ExchangeConfigMap[T]]
 ): ExchangeClient {
   const config = args[0]
 
@@ -18,7 +22,7 @@ export function createClient<T extends ExchangeId>(
     case 'hyperliquid':
       return new HyperliquidClient()
     case 'lighter':
-      return new LighterClient(config as any)
+      return new LighterClient(config as any ?? undefined)
     case 'aster':
       return new AsterClient(config as any)
     case 'backpack':
