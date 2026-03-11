@@ -60,11 +60,17 @@ export class LighterClient extends BaseClient {
   private baseUrl: string
   private apiKey: string
   private accountIndex: number | null
+  private apiKeyIndex: number
+  private hasPrivateKey: boolean = false
+  private tokenExpiresAt: number = 0
+  private static readonly TOKEN_LIFETIME = 3600
+  private static readonly TOKEN_REFRESH_MARGIN = 300 // refresh 5 min before expiry
 
   constructor(config?: LighterConfig, baseUrl = LIGHTER_API_BASE) {
     super()
     this.baseUrl = baseUrl
     this.accountIndex = config?.accountIndex ?? null
+    this.apiKeyIndex = config?.apiKeyIndex ?? 0
 
     if (config?.apiKey) {
       this.apiKey = config.apiKey
@@ -73,11 +79,25 @@ export class LighterClient extends BaseClient {
       this.apiKey = createLighterAuthToken(
         config.privateKey,
         this.accountIndex ?? 0,
-        config.apiKeyIndex ?? 0
+        this.apiKeyIndex
       )
+      this.hasPrivateKey = true
+      this.tokenExpiresAt = Date.now() + LighterClient.TOKEN_LIFETIME * 1000
     } else {
       this.apiKey = ''
     }
+  }
+
+  private refreshTokenIfNeeded(): void {
+    if (!this.hasPrivateKey) return
+    if (Date.now() < this.tokenExpiresAt - LighterClient.TOKEN_REFRESH_MARGIN * 1000) return
+
+    const { refreshLighterAuthToken } = require('../signers/lighter-signer')
+    this.apiKey = refreshLighterAuthToken(
+      this.apiKeyIndex,
+      this.accountIndex ?? 0
+    )
+    this.tokenExpiresAt = Date.now() + LighterClient.TOKEN_LIFETIME * 1000
   }
 
   private async fetchPublic(url: string): Promise<Response> {
@@ -88,6 +108,8 @@ export class LighterClient extends BaseClient {
   }
 
   private async fetchWithAuth(url: string): Promise<Response> {
+    this.refreshTokenIfNeeded()
+
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',

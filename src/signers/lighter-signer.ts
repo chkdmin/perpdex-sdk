@@ -42,6 +42,7 @@ function getSignerPath(): string {
 
 // Singleton state for the loaded library and bound functions
 let initialized = false
+let clientInitialized = false
 let CreateClientFn: any
 let CreateAuthTokenFn: any
 
@@ -82,6 +83,10 @@ function ensureInitialized(): void {
   initialized = true
 }
 
+/**
+ * Initialize the Go client and generate an auth token.
+ * Called once to set up credentials.
+ */
 export function createLighterAuthToken(
   privateKey: string,
   accountIndex: number,
@@ -98,6 +103,7 @@ export function createLighterAuthToken(
     apiKeyIndex,
     accountIndex
   )
+  clientInitialized = true
 
   // Generate token
   const deadline = Math.floor(Date.now() / 1000) + deadlineSeconds
@@ -105,6 +111,31 @@ export function createLighterAuthToken(
 
   if (result.err) {
     throw new Error(`Lighter token generation failed: ${result.err}`)
+  }
+
+  return result.str!
+}
+
+/**
+ * Generate a fresh auth token using the already-initialized Go client.
+ * Must call createLighterAuthToken() first to initialize credentials.
+ */
+export function refreshLighterAuthToken(
+  apiKeyIndex: number,
+  accountIndex: number,
+  deadlineSeconds: number = 3600
+): string {
+  ensureInitialized()
+
+  if (!clientInitialized) {
+    throw new Error('Must call createLighterAuthToken() first to initialize the client')
+  }
+
+  const deadline = Math.floor(Date.now() / 1000) + deadlineSeconds
+  const result = CreateAuthTokenFn(deadline, apiKeyIndex, accountIndex)
+
+  if (result.err) {
+    throw new Error(`Lighter token refresh failed: ${result.err}`)
   }
 
   return result.str!
