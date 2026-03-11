@@ -52,15 +52,10 @@ export interface AddressQuery {
 }
 
 export interface LighterConfig {
-  /** Pre-generated auth token (if provided, privateKey is not needed) */
   apiKey?: string
-  /** Lighter private key for auto token generation (40-byte hex) */
   privateKey?: string
-  /** API key index (required when using privateKey) */
   apiKeyIndex?: number
-  /** Account index */
   accountIndex?: number
-  /** Unused, kept for interface compatibility */
   apiSecret?: string
 }
 
@@ -92,7 +87,7 @@ export interface StandXConfig {
 export interface ExchangeConfigMap {
   hyperliquid: undefined
   pacifica: undefined
-  lighter: LighterConfig
+  lighter: LighterConfig | undefined
   aster: AsterConfig
   grvt: GrvtConfig
   backpack: BackpackConfig
