@@ -211,6 +211,50 @@ interface ExchangeResponse<T> {
 }
 ```
 
+## Bundler / Runtime 주의사항
+
+이 SDK는 Lighter의 `privateKey` 모드에서 **koffi** (네이티브 FFI) 를 사용하여 Go 기반 서명 바이너리를 로드합니다. 번들러 환경에서 사용 시 아래 설정이 필요합니다.
+
+### Next.js (Turbopack / Webpack)
+
+koffi는 네이티브 `.node` 바이너리를 사용하므로 Next.js 번들러가 처리할 수 없습니다. `next.config.ts`에서 반드시 외부 패키지로 지정해야 합니다.
+
+```typescript
+// next.config.ts
+const nextConfig: NextConfig = {
+  serverExternalPackages: ["koffi", "@chkdmin/perpdex-sdk"],
+};
+```
+
+이 설정이 없으면 런타임에 `Error: koffi is required for native Lighter token generation` 에러가 발생합니다.
+
+### pnpm v10
+
+pnpm v10은 기본적으로 네이티브 빌드 스크립트를 차단합니다. koffi 설치를 허용하려면 `package.json`에 추가:
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": ["koffi"]
+  }
+}
+```
+
+### 지원 플랫폼
+
+Lighter 네이티브 서명은 아래 플랫폼에서만 동작합니다:
+
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| macOS | ARM64 (Apple Silicon) | `lighter-signer-darwin-arm64.dylib` |
+| Linux | x64 | `lighter-signer-linux-amd64.so` |
+| Linux | ARM64 | `lighter-signer-linux-arm64.so` |
+| Windows | x64 | `lighter-signer-windows-amd64.dll` |
+
+### 서버 전용
+
+이 SDK는 **Node.js 서버 환경 전용**입니다. 브라우저나 Edge Runtime에서는 사용할 수 없습니다. Next.js에서는 API Route, Server Component 등 서버 코드에서만 import하세요.
+
 ## Error Handling
 
 SDK는 예외를 throw하지 않습니다. 모든 에러는 `ExchangeResponse`를 통해 반환됩니다.
