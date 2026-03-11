@@ -44,6 +44,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chkdmin/perpdex-sdk"
+  },
   "license": "MIT",
   "dependencies": {
     "@noble/ed25519": "^3.0.0",
