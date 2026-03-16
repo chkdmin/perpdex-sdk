@@ -1,6 +1,6 @@
 {
   "name": "@chkdmin/perpdex-sdk",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "description": "Unified SDK for fetching positions and balances from perpetual DEXes",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

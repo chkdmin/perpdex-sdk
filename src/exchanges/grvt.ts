@@ -1,4 +1,4 @@
-import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, GrvtConfig } from '../types'
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery, GrvtConfig } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId } from '../utils'
 
@@ -39,6 +39,18 @@ interface GrvtSubAccountSummary {
 
 interface GrvtAccountSummaryResponse {
   result: GrvtSubAccountSummary
+}
+
+interface GrvtFundingBalance {
+  currency: string
+  balance: string
+  locked_balance: string
+}
+
+interface GrvtFundingAccountSummary {
+  result: {
+    balances: GrvtFundingBalance[]
+  }
 }
 
 interface GrvtOpenOrder {
@@ -179,6 +191,33 @@ export class GrvtClient extends BaseClient {
     }
 
     return response.json()
+  }
+
+  async getSpotBalances(_query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    try {
+      await this.ensureSession()
+
+      const response = await this.authenticatedPost<GrvtFundingAccountSummary>(
+        '/full/v1/get_funding_account_summary',
+        { sub_account_id: this.tradingAccountId }
+      )
+
+      const balances = response.result?.balances || []
+
+      const spotBalances: SpotBalance[] = balances
+        .filter((b) => parseFloat(b.balance) !== 0)
+        .map((b) => ({
+          symbol: b.currency,
+          balance: b.balance,
+          lockedBalance: b.locked_balance || '0',
+        }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
+      )
+    }
   }
 
   async getPositions(_query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {

@@ -1,4 +1,4 @@
-import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery } from '../types'
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId, isValidEvmAddress } from '../utils'
 
@@ -37,6 +37,18 @@ interface HyperliquidClearinghouseState {
     totalMarginUsed: string
   }
   crossMaintenanceMarginUsed: string
+}
+
+interface HyperliquidSpotBalance {
+  coin: string
+  total: string
+  hold: string
+  entryNtl: string
+  token: number
+}
+
+interface HyperliquidSpotClearinghouseState {
+  balances: HyperliquidSpotBalance[]
 }
 
 interface HyperliquidOpenOrder {
@@ -102,6 +114,36 @@ export class HyperliquidClient extends BaseClient {
     } catch (error) {
       return this.createErrorResponse(
         error instanceof Error ? error.message : 'Failed to fetch positions'
+      )
+    }
+  }
+
+  async getSpotBalances(query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    const address = query?.address
+    if (!address || !isValidEvmAddress(address)) {
+      return this.createErrorResponse('Invalid or missing EVM address')
+    }
+
+    try {
+      const state = await this.post<HyperliquidSpotClearinghouseState>({
+        type: 'spotClearinghouseState',
+        user: address,
+      })
+
+      const balances = state.balances || []
+
+      const spotBalances: SpotBalance[] = balances
+        .filter((b) => parseFloat(b.total) !== 0)
+        .map((b) => ({
+          symbol: b.coin,
+          balance: b.total,
+          lockedBalance: b.hold || '0',
+        }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
       )
     }
   }

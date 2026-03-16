@@ -95,8 +95,15 @@ export interface ExchangeConfigMap {
   standx: StandXConfig
 }
 
+export interface SpotBalance {
+  symbol: string
+  balance: string
+  lockedBalance: string
+}
+
 export interface ExchangeClient {
   readonly exchangeId: ExchangeId
   getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>>
   getAccountBalance(query?: AddressQuery): Promise<ExchangeResponse<AccountBalance>>
+  getSpotBalances?(query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>>
 }

@@ -1,4 +1,4 @@
-import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, LighterConfig } from '../types'
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery, LighterConfig } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId, isValidEvmAddress } from '../utils'
 
@@ -8,6 +8,12 @@ interface LighterAccountResponse {
   code: number
   total: number
   accounts: LighterAccount[]
+}
+
+interface LighterAsset {
+  symbol: string
+  balance: string
+  locked_balance: string
 }
 
 interface LighterAccount {
@@ -20,6 +26,7 @@ interface LighterAccount {
   collateral: string
   total_asset_value: string
   positions: LighterPosition[]
+  assets?: LighterAsset[]
 }
 
 interface LighterPosition {
@@ -243,6 +250,37 @@ export class LighterClient extends BaseClient {
     }
 
     return slTpMap
+  }
+
+  async getSpotBalances(query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    try {
+      const data = await this.fetchAccount(query)
+
+      if (data.code !== 200 || !data.accounts || data.accounts.length === 0) {
+        return this.createSuccessResponse([])
+      }
+
+      const account = data.accounts[0]
+      const assets = account.assets || []
+
+      // USDC is already handled by getAccountBalance() as collateral — exclude to prevent double counting
+      const spotBalances: SpotBalance[] = assets
+        .filter((a) => {
+          const symbol = a.symbol.toUpperCase()
+          return symbol !== 'USDC' && symbol !== 'USD' && parseFloat(a.balance) !== 0
+        })
+        .map((a) => ({
+          symbol: a.symbol,
+          balance: a.balance,
+          lockedBalance: a.locked_balance || '0',
+        }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
+      )
+    }
   }
 
   async getAccountBalance(query?: AddressQuery): Promise<ExchangeResponse<AccountBalance>> {

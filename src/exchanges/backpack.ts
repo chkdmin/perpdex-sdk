@@ -1,4 +1,4 @@
-import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, BackpackConfig } from '../types'
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery, BackpackConfig } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId } from '../utils'
 
@@ -201,6 +201,35 @@ export class BackpackClient extends BaseClient {
     }
 
     return slTpMap
+  }
+
+  async getSpotBalances(_query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    if (!this.privateKey) {
+      return this.createErrorResponse('Backpack API credentials not configured')
+    }
+
+    try {
+      const balances = await this.authenticatedGet<
+        Record<string, { available: string; locked: string; staked: string }>
+      >('/api/v1/capital', 'balanceQuery')
+
+      const spotBalances: SpotBalance[] = Object.entries(balances)
+        .filter(([, v]) => {
+          const total = parseFloat(v.available) + parseFloat(v.locked) + parseFloat(v.staked)
+          return total !== 0
+        })
+        .map(([symbol, v]) => ({
+          symbol,
+          balance: (parseFloat(v.available) + parseFloat(v.locked) + parseFloat(v.staked)).toString(),
+          lockedBalance: v.locked || '0',
+        }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
+      )
+    }
   }
 
   async getPositions(_query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {

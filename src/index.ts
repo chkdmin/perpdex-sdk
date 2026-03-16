@@ -7,6 +7,7 @@ export type {
   PositionSide,
   Position,
   AccountBalance,
+  SpotBalance,
   ExchangeResponse,
   ExchangeClient,
   AddressQuery,

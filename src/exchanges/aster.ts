@@ -1,9 +1,10 @@
-import type { ExchangeId, Position, AccountBalance, ExchangeResponse, AddressQuery, AsterConfig } from '../types'
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery, AsterConfig } from '../types'
 import { BaseClient } from '../base/base-client'
 import { generatePositionId } from '../utils'
 import crypto from 'crypto'
 
 const ASTER_API_BASE = 'https://fapi.asterdex.com'
+const ASTER_SPOT_API_BASE = 'https://sapi.asterdex.com'
 
 interface AsterPositionRisk {
   symbol: string
@@ -30,6 +31,16 @@ interface AsterAccountInfo {
   totalPositionInitialMargin: string
   availableBalance: string
   maxWithdrawAmount: string
+}
+
+interface AsterSpotAsset {
+  a: string  // asset symbol
+  f: string  // free balance
+  l: string  // locked balance
+}
+
+interface AsterSpotAccountInfo {
+  assets: AsterSpotAsset[]
 }
 
 interface AsterOpenOrder {
@@ -75,14 +86,15 @@ export class AsterClient extends BaseClient {
 
   private async signedRequest<T>(
     endpoint: string,
-    params: Record<string, string> = {}
+    params: Record<string, string> = {},
+    baseUrl?: string
   ): Promise<T> {
     const timestamp = Date.now().toString()
     const queryParams = new URLSearchParams({ ...params, timestamp })
     const signature = createSignature(queryParams.toString(), this.apiSecret)
     queryParams.append('signature', signature)
 
-    const url = `${this.baseUrl}${endpoint}?${queryParams.toString()}`
+    const url = `${baseUrl || this.baseUrl}${endpoint}?${queryParams.toString()}`
 
     const response = await fetch(url, {
       method: 'GET',
@@ -98,6 +110,36 @@ export class AsterClient extends BaseClient {
     }
 
     return response.json()
+  }
+
+  async getSpotBalances(_query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    try {
+      const accountInfo = await this.signedRequest<AsterSpotAccountInfo>(
+        '/api/v1/account',
+        {},
+        ASTER_SPOT_API_BASE
+      )
+
+      const assets = accountInfo.assets || []
+
+      const spotBalances: SpotBalance[] = assets
+        .filter((a) => {
+          const free = parseFloat(a.f) || 0
+          const locked = parseFloat(a.l) || 0
+          return free + locked !== 0
+        })
+        .map((a) => ({
+          symbol: a.a,
+          balance: (parseFloat(a.f) + parseFloat(a.l)).toString(),
+          lockedBalance: a.l || '0',
+        }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
+      )
+    }
   }
 
   async getPositions(_query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
