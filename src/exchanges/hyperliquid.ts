@@ -51,6 +51,11 @@ interface HyperliquidSpotClearinghouseState {
   balances: HyperliquidSpotBalance[]
 }
 
+interface HyperliquidPerpDexMeta {
+  name: string
+  fullName: string
+}
+
 interface HyperliquidOpenOrder {
   coin: string
   oid: number
@@ -70,6 +75,9 @@ interface HyperliquidOpenOrder {
 export class HyperliquidClient extends BaseClient {
   readonly exchangeId: ExchangeId = 'hyperliquid'
 
+  private perpDexCache?: { names: (string | undefined)[]; expiresAt: number }
+  private static readonly PERP_DEX_TTL_MS = 5 * 60 * 1000
+
   private async post<T>(body: Record<string, unknown>): Promise<T> {
     const response = await fetch(`${HYPERLIQUID_API_BASE}/info`, {
       method: 'POST',
@@ -83,6 +91,37 @@ export class HyperliquidClient extends BaseClient {
     }
 
     return response.json()
+  }
+
+  private async getDexQueryNames(): Promise<(string | undefined)[]> {
+    const now = Date.now()
+    if (this.perpDexCache && this.perpDexCache.expiresAt > now) {
+      return this.perpDexCache.names
+    }
+    try {
+      const dexs = await this.post<(HyperliquidPerpDexMeta | null)[]>({ type: 'perpDexs' })
+      const names: (string | undefined)[] = [undefined]
+      for (const d of dexs) {
+        if (d && d.name) names.push(d.name)
+      }
+      this.perpDexCache = { names, expiresAt: now + HyperliquidClient.PERP_DEX_TTL_MS }
+      return names
+    } catch {
+      return [undefined]
+    }
+  }
+
+  private async fetchClearinghouseState(
+    address: string,
+    dex?: string
+  ): Promise<HyperliquidClearinghouseState | null> {
+    try {
+      const body: Record<string, unknown> = { type: 'clearinghouseState', user: address }
+      if (dex) body.dex = dex
+      return await this.post<HyperliquidClearinghouseState>(body)
+    } catch {
+      return null
+    }
   }
 
   async getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
@@ -155,24 +194,40 @@ export class HyperliquidClient extends BaseClient {
     }
 
     try {
-      const state = await this.post<HyperliquidClearinghouseState>({
-        type: 'clearinghouseState',
-        user: address,
-      })
+      const dexNames = await this.getDexQueryNames()
+      const states = await Promise.all(
+        dexNames.map((dex) => this.fetchClearinghouseState(address, dex))
+      )
 
-      const marginSummary = state.crossMarginSummary || state.marginSummary
+      let totalEquity = 0
+      let availableBalance = 0
+      let usedMargin = 0
+      let unrealizedPnl = 0
+      let anySuccess = false
 
-      let totalUnrealizedPnl = 0
-      for (const ap of state.assetPositions) {
-        totalUnrealizedPnl += parseFloat(ap.position.unrealizedPnl) || 0
+      for (const state of states) {
+        if (!state) continue
+        anySuccess = true
+        // marginSummary = 전체(isolated 포함). crossMarginSummary는 isolated dex에서 0이라 쓰지 않음.
+        const ms = state.marginSummary
+        totalEquity += parseFloat(ms.accountValue) || 0
+        usedMargin += parseFloat(ms.totalMarginUsed) || 0
+        availableBalance += parseFloat(state.crossMarginSummary?.withdrawable || '0') || 0
+        for (const ap of state.assetPositions) {
+          unrealizedPnl += parseFloat(ap.position.unrealizedPnl) || 0
+        }
+      }
+
+      if (!anySuccess) {
+        return this.createErrorResponse('Failed to fetch account balance')
       }
 
       return this.createSuccessResponse({
         exchange: this.exchangeId,
-        totalEquity: parseFloat(marginSummary.accountValue) || 0,
-        availableBalance: parseFloat(state.crossMarginSummary?.withdrawable || '0') || 0,
-        usedMargin: parseFloat(marginSummary.totalMarginUsed) || 0,
-        unrealizedPnl: totalUnrealizedPnl,
+        totalEquity,
+        availableBalance,
+        usedMargin,
+        unrealizedPnl,
       })
     } catch (error) {
       return this.createErrorResponse(
