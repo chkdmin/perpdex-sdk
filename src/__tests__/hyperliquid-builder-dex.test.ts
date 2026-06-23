@@ -116,3 +116,61 @@ describe('Hyperliquid getAccountBalance (multi-dex)', () => {
     expect(result.data!.availableBalance).toBeCloseTo(1234.5, 4)
   })
 })
+
+describe('Hyperliquid getPositions (multi-dex)', () => {
+  beforeEach(() => mockFetch.mockReset())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('빌더 dex 포지션을 기본 dex 포지션과 합쳐 반환한다', async () => {
+    mockFetch.mockImplementation(routeFetch({}))
+    const client = new HyperliquidClient()
+    const result = await client.getPositions({ address: ADDR })
+
+    expect(result.success).toBe(true)
+    expect(result.data).toHaveLength(1)
+    const pos = result.data![0]
+    expect(pos.market).toBe('xyz:SKHX-PERP')
+    expect(pos.baseAsset).toBe('xyz:SKHX')
+    expect(pos.side).toBe('short')
+    expect(pos.size).toBe(12)
+    expect(pos.sizeUsd).toBe(20406)
+    expect(pos.leverage).toBe(3)
+    expect(pos.liquidationPrice).toBeCloseTo(2197.12, 2)
+  })
+
+  it('포지션이 있는 빌더 dex의 SL/TP를 매핑한다', async () => {
+    mockFetch.mockImplementation(
+      routeFetch({
+        orders: {
+          xyz: [
+            {
+              coin: 'xyz:SKHX',
+              oid: 1,
+              side: 'B',
+              sz: '0.0',
+              limitPx: '2335.7',
+              orderType: 'Stop Market',
+              reduceOnly: true,
+              triggerCondition: 'Price above 2162.7',
+              triggerPx: '2162.7',
+              isTrigger: true,
+              isPositionTpsl: true,
+            },
+          ],
+        },
+      })
+    )
+    const client = new HyperliquidClient()
+    const result = await client.getPositions({ address: ADDR })
+
+    expect(result.success).toBe(true)
+    expect(result.data![0].stopLoss).toBeCloseTo(2162.7, 2)
+  })
+
+  it('잘못된 주소는 에러', async () => {
+    const client = new HyperliquidClient()
+    const result = await client.getPositions({ address: 'invalid' })
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('Invalid or missing EVM address')
+  })
+})

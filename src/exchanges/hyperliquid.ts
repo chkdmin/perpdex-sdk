@@ -124,6 +124,23 @@ export class HyperliquidClient extends BaseClient {
     }
   }
 
+  private async fetchPositionsForDex(address: string, dex?: string): Promise<Position[]> {
+    const state = await this.fetchClearinghouseState(address, dex)
+    if (!state || state.assetPositions.length === 0) return []
+
+    let slTpMap = new Map<string, { stopLoss: number | null; takeProfit: number | null }>()
+    try {
+      const body: Record<string, unknown> = { type: 'frontendOpenOrders', user: address }
+      if (dex) body.dex = dex
+      const orders = await this.post<HyperliquidOpenOrder[]>(body)
+      slTpMap = this.extractSlTpFromOrders(orders)
+    } catch {
+      // SL/TP 조회 실패는 무시 (포지션은 그대로 반환)
+    }
+
+    return this.transformPositions(state.assetPositions, slTpMap)
+  }
+
   async getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
     const address = query?.address
     if (!address || !isValidEvmAddress(address)) {
@@ -131,25 +148,11 @@ export class HyperliquidClient extends BaseClient {
     }
 
     try {
-      const state = await this.post<HyperliquidClearinghouseState>({
-        type: 'clearinghouseState',
-        user: address,
-      })
-
-      let frontendOrders: HyperliquidOpenOrder[] = []
-      try {
-        frontendOrders = await this.post<HyperliquidOpenOrder[]>({
-          type: 'frontendOpenOrders',
-          user: address,
-        })
-      } catch {
-        // silently ignore order fetch failures
-      }
-
-      const slTpMap = this.extractSlTpFromOrders(frontendOrders)
-      const positions = this.transformPositions(state.assetPositions, slTpMap)
-
-      return this.createSuccessResponse(positions)
+      const dexNames = await this.getDexQueryNames()
+      const perDex = await Promise.all(
+        dexNames.map((dex) => this.fetchPositionsForDex(address, dex))
+      )
+      return this.createSuccessResponse(perDex.flat())
     } catch (error) {
       return this.createErrorResponse(
         error instanceof Error ? error.message : 'Failed to fetch positions'
