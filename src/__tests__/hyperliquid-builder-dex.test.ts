@@ -9,8 +9,9 @@ const ADDR = '0x36f07dee2ab548ba7e70017a0f5d389c60c891b7'
 const emptyState = {
   assetPositions: [],
   marginSummary: { accountValue: '0', totalNtlPos: '0', totalRawUsd: '0', totalMarginUsed: '0' },
-  crossMarginSummary: { accountValue: '0', totalNtlPos: '0', totalRawUsd: '0', totalMarginUsed: '0', withdrawable: '0' },
+  crossMarginSummary: { accountValue: '0', totalNtlPos: '0', totalRawUsd: '0', totalMarginUsed: '0' },
   crossMaintenanceMarginUsed: '0',
+  withdrawable: '0',
 }
 
 const xyzState = {
@@ -33,8 +34,9 @@ const xyzState = {
     },
   ],
   marginSummary: { accountValue: '7277.711945', totalNtlPos: '20406', totalRawUsd: '27683.71', totalMarginUsed: '7277.711945' },
-  crossMarginSummary: { accountValue: '0', totalNtlPos: '0', totalRawUsd: '0', totalMarginUsed: '0', withdrawable: '0' },
+  crossMarginSummary: { accountValue: '0', totalNtlPos: '0', totalRawUsd: '0', totalMarginUsed: '0' },
   crossMaintenanceMarginUsed: '0',
+  withdrawable: '1234.5',
 }
 
 // body.type / body.dex 기반으로 응답을 라우팅 (병렬 호출 순서 무관)
@@ -101,5 +103,16 @@ describe('Hyperliquid getAccountBalance (multi-dex)', () => {
       ([, init]: [string, { body: string }]) => JSON.parse(init.body).type === 'perpDexs'
     )
     expect(perpDexsCalls).toHaveLength(1)
+  })
+
+  it('availableBalance는 top-level withdrawable 필드에서 읽어온다', async () => {
+    mockFetch.mockImplementation(routeFetch({}))
+    const client = new HyperliquidClient()
+    const result = await client.getAccountBalance({ address: ADDR })
+
+    expect(result.success).toBe(true)
+    // xyzState has withdrawable: '1234.5', emptyState has withdrawable: '0'
+    // total should be 1234.5 + 0 = 1234.5
+    expect(result.data!.availableBalance).toBeCloseTo(1234.5, 4)
   })
 })

@@ -28,7 +28,6 @@ interface HyperliquidClearinghouseState {
     totalNtlPos: string
     totalRawUsd: string
     totalMarginUsed: string
-    withdrawable: string
   }
   marginSummary: {
     accountValue: string
@@ -37,6 +36,7 @@ interface HyperliquidClearinghouseState {
     totalMarginUsed: string
   }
   crossMaintenanceMarginUsed: string
+  withdrawable: string
 }
 
 interface HyperliquidSpotBalance {
@@ -212,7 +212,7 @@ export class HyperliquidClient extends BaseClient {
         const ms = state.marginSummary
         totalEquity += parseFloat(ms.accountValue) || 0
         usedMargin += parseFloat(ms.totalMarginUsed) || 0
-        availableBalance += parseFloat(state.crossMarginSummary?.withdrawable || '0') || 0
+        availableBalance += parseFloat(state.withdrawable || '0') || 0
         for (const ap of state.assetPositions) {
           unrealizedPnl += parseFloat(ap.position.unrealizedPnl) || 0
         }
