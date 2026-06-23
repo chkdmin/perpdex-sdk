@@ -124,9 +124,10 @@ export class HyperliquidClient extends BaseClient {
     }
   }
 
-  private async fetchPositionsForDex(address: string, dex?: string): Promise<Position[]> {
+  private async fetchPositionsForDex(address: string, dex?: string): Promise<Position[] | null> {
     const state = await this.fetchClearinghouseState(address, dex)
-    if (!state || state.assetPositions.length === 0) return []
+    if (!state) return null // 조회 실패 (성공이지만 빈 포지션과 구분)
+    if (state.assetPositions.length === 0) return []
 
     let slTpMap = new Map<string, { stopLoss: number | null; takeProfit: number | null }>()
     try {
@@ -152,7 +153,13 @@ export class HyperliquidClient extends BaseClient {
       const perDex = await Promise.all(
         dexNames.map((dex) => this.fetchPositionsForDex(address, dex))
       )
-      return this.createSuccessResponse(perDex.flat())
+      // 모든 dex 조회가 실패하면(장애) 빈 성공이 아니라 에러를 반환 — getAccountBalance와 대칭
+      if (perDex.every((positions) => positions === null)) {
+        return this.createErrorResponse('Failed to fetch positions')
+      }
+      return this.createSuccessResponse(
+        perDex.filter((positions): positions is Position[] => positions !== null).flat()
+      )
     } catch (error) {
       return this.createErrorResponse(
         error instanceof Error ? error.message : 'Failed to fetch positions'

@@ -173,4 +173,21 @@ describe('Hyperliquid getPositions (multi-dex)', () => {
     expect(result.success).toBe(false)
     expect(result.error).toContain('Invalid or missing EVM address')
   })
+
+  it('모든 dex의 clearinghouseState 실패 시 에러를 반환한다 (빈 성공 아님)', async () => {
+    mockFetch.mockImplementation((url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body)
+      if (body.type === 'perpDexs') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([null, { name: 'xyz', fullName: 'XYZ' }]) })
+      }
+      // clearinghouseState 등 모든 조회가 장애로 실패(non-OK)
+      return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('outage') })
+    })
+    const client = new HyperliquidClient()
+    const result = await client.getPositions({ address: ADDR })
+
+    expect(result.success).toBe(false)
+    expect(result.data).toBeNull()
+    expect(result.error).toBeTruthy()
+  })
 })
