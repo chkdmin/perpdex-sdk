@@ -136,6 +136,57 @@ describe('Hyperliquid getSpotBalances', () => {
     expect(result.success).toBe(false)
     expect(result.error).toContain('Invalid or missing EVM address')
   })
+
+  // 빌더 dex(HIP-3) perp는 spot USDC를 cross-collateral로 잠근다(hold). 잠긴 분은
+  // getAccountBalance의 totalEquity로도 잡히므로, spot balance에 total을 그대로 쓰면
+  // 같은 USDC가 이중 계상된다. Hyperliquid가 주는 tokenToAvailableAfterMaintenance가
+  // 담보 차감 후 순수 가용 잔액이므로 이를 spot balance로 사용한다.
+  it('빌더 dex 담보로 잠긴 토큰은 가용 잔액(담보 차감 후)만 반영한다', async () => {
+    const client = new HyperliquidClient()
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          balances: [
+            { coin: 'USDC', total: '9188.53331674', hold: '7519.517447', entryNtl: '0', token: 0 },
+            { coin: 'HYPE', total: '0.089', hold: '0', entryNtl: '2', token: 150 },
+          ],
+          // token 0(USDC)만 담보로 잠김 → 가용 1669.02. HYPE는 목록에 없음(담보 미사용).
+          tokenToAvailableAfterMaintenance: [[0, '1669.01586974']],
+        }),
+    })
+
+    const result = await client.getSpotBalances({
+      address: '0x1234567890abcdef1234567890abcdef12345678',
+    })
+
+    expect(result.success).toBe(true)
+    const usdc = result.data!.find((b) => b.symbol === 'USDC')!
+    expect(usdc.balance).toBe('1669.01586974') // total(9188)이 아닌 담보 차감 후 가용
+    expect(usdc.lockedBalance).toBe('7519.517447') // hold는 정보용으로 보존
+    const hype = result.data!.find((b) => b.symbol === 'HYPE')!
+    expect(hype.balance).toBe('0.089') // 담보 미사용 토큰은 total 그대로
+  })
+
+  it('tokenToAvailableAfterMaintenance가 없으면 total을 그대로 쓴다(하위호환)', async () => {
+    const client = new HyperliquidClient()
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          balances: [{ coin: 'USDC', total: '500', hold: '0', entryNtl: '0', token: 0 }],
+        }),
+    })
+
+    const result = await client.getSpotBalances({
+      address: '0x1234567890abcdef1234567890abcdef12345678',
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.data![0].balance).toBe('500')
+  })
 })
 
 describe('Backpack getSpotBalances', () => {

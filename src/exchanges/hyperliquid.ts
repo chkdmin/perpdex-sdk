@@ -49,6 +49,9 @@ interface HyperliquidSpotBalance {
 
 interface HyperliquidSpotClearinghouseState {
   balances: HyperliquidSpotBalance[]
+  // [tokenId, availableAfterMaintenance] — 빌더 dex(HIP-3) cross-collateral 담보를
+  // 차감한 후의 가용 잔액. 담보로 잠긴 토큰만 등장한다.
+  tokenToAvailableAfterMaintenance?: [number, string][]
 }
 
 interface HyperliquidPerpDexMeta {
@@ -181,13 +184,30 @@ export class HyperliquidClient extends BaseClient {
 
       const balances = state.balances || []
 
+      // 빌더 dex(HIP-3) perp는 spot 토큰을 cross-collateral 담보로 잠근다(hold).
+      // 잠긴 분은 getAccountBalance의 totalEquity(perp accountValue)로도 잡히므로,
+      // spot balance에 total을 그대로 쓰면 같은 자금이 이중 계상된다.
+      // tokenToAvailableAfterMaintenance가 담보 차감 후 순수 가용 잔액이라 이를 사용한다.
+      // (담보로 잠기지 않은 토큰은 이 목록에 없으므로 total을 그대로 쓴다 → 빌더 dex 미사용 계정엔 영향 없음)
+      const availableAfterCollateral = new Map<number, string>()
+      for (const [tokenId, available] of state.tokenToAvailableAfterMaintenance ?? []) {
+        availableAfterCollateral.set(tokenId, available)
+      }
+
       const spotBalances: SpotBalance[] = balances
         .filter((b) => parseFloat(b.total) !== 0)
-        .map((b) => ({
-          symbol: b.coin,
-          balance: b.total,
-          lockedBalance: b.hold || '0',
-        }))
+        .map((b) => {
+          const available = availableAfterCollateral.get(b.token)
+          const balance =
+            available !== undefined && parseFloat(available) < parseFloat(b.total)
+              ? available
+              : b.total
+          return {
+            symbol: b.coin,
+            balance,
+            lockedBalance: b.hold || '0',
+          }
+        })
 
       return this.createSuccessResponse(spotBalances)
     } catch (error) {
