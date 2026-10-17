@@ -60,6 +60,12 @@ interface ExtendedBalanceResponse {
   }
 }
 
+class ExtendedApiError extends Error {
+  constructor(readonly status: number, body: string) {
+    super(`Extended API error: ${status} - ${body}`)
+  }
+}
+
 export class ExtendedClient extends BaseClient {
   readonly exchangeId: ExchangeId = 'extended'
   private apiKey: string
@@ -100,8 +106,7 @@ export class ExtendedClient extends BaseClient {
     })
 
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Extended API error: ${response.status} - ${errorText}`)
+      throw new ExtendedApiError(response.status, await response.text())
     }
 
     return response.json()
@@ -144,6 +149,16 @@ export class ExtendedClient extends BaseClient {
         unrealizedPnl: parseFloat(data.unrealisedPnl) || 0,
       })
     } catch (error) {
+      // 잔고가 0인 계정은 404를 반환한다 (API 문서: "Returns a 404 error if the user's balance is 0")
+      if (error instanceof ExtendedApiError && error.status === 404) {
+        return this.createSuccessResponse({
+          exchange: this.exchangeId,
+          totalEquity: 0,
+          availableBalance: 0,
+          usedMargin: 0,
+          unrealizedPnl: 0,
+        })
+      }
       return this.createErrorResponse(
         error instanceof Error ? error.message : 'Failed to fetch account balance'
       )

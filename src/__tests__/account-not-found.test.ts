@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LighterClient } from '../exchanges/lighter'
 import { PacificaClient } from '../exchanges/pacifica'
+import { ExtendedClient } from '../exchanges/extended'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -71,6 +72,31 @@ describe('Pacifica: 계정이 없는 주소', () => {
   it('서버 에러는 그대로 실패한다', async () => {
     mockFetch.mockImplementation(() => response(500, { success: false, error: 'Internal error' }))
     const result = await new PacificaClient().getAccountBalance({ address: SOL_ADDR })
+
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('Extended: 잔고가 0인 계정', () => {
+  // API 문서: GET /api/v1/user/balance "Returns a 404 error if the user's balance is 0."
+  it('getAccountBalance는 404를 잔고 0으로 처리한다', async () => {
+    mockFetch.mockImplementation(() => response(404, { status: 'ERROR', error: { code: 'NOT_FOUND', message: 'Balance not found' } }))
+    const result = await new ExtendedClient({ apiKey: 'key', apiSecret: '' }).getAccountBalance()
+
+    expect(result.success).toBe(true)
+    expect(result.data).toMatchObject({ totalEquity: 0, availableBalance: 0, usedMargin: 0, unrealizedPnl: 0 })
+  })
+
+  it('인증 오류는 그대로 실패한다', async () => {
+    mockFetch.mockImplementation(() => response(401, { status: 'ERROR', error: { code: 'UNAUTHORIZED', message: 'Invalid api key' } }))
+    const result = await new ExtendedClient({ apiKey: 'bad', apiSecret: '' }).getAccountBalance()
+
+    expect(result.success).toBe(false)
+  })
+
+  it('서버 에러는 그대로 실패한다', async () => {
+    mockFetch.mockImplementation(() => response(500, { status: 'ERROR' }))
+    const result = await new ExtendedClient({ apiKey: 'key', apiSecret: '' }).getAccountBalance()
 
     expect(result.success).toBe(false)
   })
