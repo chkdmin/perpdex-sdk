@@ -298,3 +298,68 @@ describe('TxFlow clearinghouseState 요청 공유', () => {
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 })
+
+// 비공식 API — 형식이 깨진 200 응답을 "잔고 0 / 포지션 없음"으로 성공 처리하면 소비자가 기존 자산을 지운다
+describe('TxFlow 비정상 응답 검증', () => {
+  beforeEach(() => mockFetch.mockReset())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('accountValue가 비어 있으면 잔고 조회를 실패로 반환한다', async () => {
+    const broken = structuredClone(clearinghouseState)
+    broken.marginSummary.accountValue = ''
+    mockFetch.mockImplementation(() => jsonResponse(broken))
+
+    const result = await new TxFlowClient().getAccountBalance({ address: ADDR })
+    expect(result.success).toBe(false)
+  })
+
+  it('200 에러 객체는 잔고·포지션 조회를 실패로 반환한다', async () => {
+    mockFetch.mockImplementation(() => jsonResponse({ message: 'This action is not allowed.' }))
+    const client = new TxFlowClient()
+
+    const [balance, positions] = await Promise.all([
+      client.getAccountBalance({ address: ADDR }),
+      client.getPositions({ address: ADDR }),
+    ])
+    expect(balance.success).toBe(false)
+    expect(positions.success).toBe(false)
+  })
+
+  it('포지션의 markPx가 비어 있으면 포지션 조회를 실패로 반환한다', async () => {
+    const broken = structuredClone(clearinghouseState)
+    broken.assetPositions[0].position.markPx = ''
+    mockFetch.mockImplementation(() => jsonResponse(broken))
+
+    const result = await new TxFlowClient().getPositions({ address: ADDR })
+    expect(result.success).toBe(false)
+  })
+
+  it('balances가 없는 spot 응답은 실패로 반환한다', async () => {
+    mockFetch.mockImplementation(() => jsonResponse({ message: 'This action is not allowed.' }))
+
+    const result = await new TxFlowClient().getSpotBalances({ address: ADDR })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('TxFlow 요청 타임아웃', () => {
+  beforeEach(() => mockFetch.mockReset())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('응답 없이 멈춘 요청은 abort signal로 끊긴다', async () => {
+    // signal이 abort되면 reject하는 fetch — signal을 넘기지 않으면 영원히 대기한다
+    mockFetch.mockImplementation((_url: string, init: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+      })
+    )
+    const pending = new TxFlowClient().getSpotBalances({ address: ADDR })
+    const signal: AbortSignal = mockFetch.mock.calls[0][1].signal
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(signal.aborted).toBe(false)
+    // 타임아웃 시간을 기다리지 않고 abort 이벤트로 타임아웃을 재현한다
+    signal.dispatchEvent(new Event('abort'))
+    const result = await pending
+    expect(result.success).toBe(false)
+  })
+})
