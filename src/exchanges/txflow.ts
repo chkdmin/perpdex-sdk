@@ -18,7 +18,6 @@ interface TxFlowAssetPosition {
     liquidationPx: string | null
     marginUsed: string
   }
-  type: string
   // 포지션에 걸린 TP/SL. 미설정 트리거가는 빈 문자열
   tpsl?: { slTriggerPrice: string; tpTriggerPrice: string }[]
 }
@@ -41,6 +40,8 @@ interface TxFlowSpotClearinghouseState {
 export class TxFlowClient extends BaseClient {
   readonly exchangeId: ExchangeId = 'txflow'
 
+  private readonly inflightStates = new Map<string, Promise<TxFlowClearinghouseState>>()
+
   private async post<T>(body: Record<string, unknown>): Promise<T> {
     const response = await fetch(`${TXFLOW_API_BASE}/info`, {
       method: 'POST',
@@ -56,8 +57,17 @@ export class TxFlowClient extends BaseClient {
     return response.json()
   }
 
+  // getAccountBalance와 getPositions가 같은 응답을 쓰므로, 동시에 호출되면 진행 중인 요청을 공유한다
+  // (완료된 결과는 캐시하지 않음)
   private fetchClearinghouseState(address: string): Promise<TxFlowClearinghouseState> {
-    return this.post<TxFlowClearinghouseState>({ type: 'clearinghouseState', user: address })
+    const key = address.toLowerCase()
+    const inflight = this.inflightStates.get(key)
+    if (inflight) return inflight
+
+    const request = this.post<TxFlowClearinghouseState>({ type: 'clearinghouseState', user: address })
+      .finally(() => this.inflightStates.delete(key))
+    this.inflightStates.set(key, request)
+    return request
   }
 
   async getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
