@@ -7,6 +7,7 @@ export type ExchangeId =
   | 'backpack'
   | 'extended'
   | 'standx'
+  | 'txflow'
 
 export type PositionSide = 'long' | 'short'
 
@@ -93,6 +94,7 @@ export interface ExchangeConfigMap {
   backpack: BackpackConfig
   extended: ExtendedConfig
   standx: StandXConfig
+  txflow: undefined
 }
 
 export interface SpotBalance {

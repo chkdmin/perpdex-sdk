@@ -29,6 +29,7 @@ export { PacificaClient } from './exchanges/pacifica'
 export { GrvtClient } from './exchanges/grvt'
 export { ExtendedClient } from './exchanges/extended'
 export { StandXClient } from './exchanges/standx'
+export { TxFlowClient } from './exchanges/txflow'
 
 // Utilities
 export { isValidEvmAddress, isValidSolanaAddress } from './utils'

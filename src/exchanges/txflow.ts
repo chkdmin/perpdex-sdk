@@ -1,0 +1,164 @@
+import type { ExchangeId, Position, AccountBalance, SpotBalance, ExchangeResponse, AddressQuery } from '../types'
+import { BaseClient } from '../base/base-client'
+import { generatePositionId, isValidEvmAddress } from '../utils'
+
+// 공식 API 문서 미공개 — app.txflow.com이 사용하는 Hyperliquid 호환 /info 엔드포인트
+const TXFLOW_API_BASE = 'https://api.txflow.com'
+
+interface TxFlowAssetPosition {
+  position: {
+    coin: string
+    szi: string
+    leverage: { type: string; value: number }
+    entryPx: string
+    markPx: string
+    positionValue: string
+    unrealizedPnl: string
+    returnOnEquity: string
+    liquidationPx: string | null
+    marginUsed: string
+  }
+  type: string
+  // 포지션에 걸린 TP/SL. 미설정 트리거가는 빈 문자열
+  tpsl?: { slTriggerPrice: string; tpTriggerPrice: string }[]
+}
+
+interface TxFlowClearinghouseState {
+  assetPositions: TxFlowAssetPosition[]
+  marginSummary: {
+    accountValue: string
+    totalNtlPos: string
+    totalRawUsd: string
+    totalMarginUsed: string
+  }
+  withdrawable: string
+}
+
+interface TxFlowSpotClearinghouseState {
+  balances: { coin: string; total: string; hold: string }[]
+}
+
+export class TxFlowClient extends BaseClient {
+  readonly exchangeId: ExchangeId = 'txflow'
+
+  private async post<T>(body: Record<string, unknown>): Promise<T> {
+    const response = await fetch(`${TXFLOW_API_BASE}/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`TxFlow API error: ${response.status} - ${errorText}`)
+    }
+
+    return response.json()
+  }
+
+  private fetchClearinghouseState(address: string): Promise<TxFlowClearinghouseState> {
+    return this.post<TxFlowClearinghouseState>({ type: 'clearinghouseState', user: address })
+  }
+
+  async getPositions(query?: AddressQuery): Promise<ExchangeResponse<Position[]>> {
+    const address = query?.address
+    if (!address || !isValidEvmAddress(address)) {
+      return this.createErrorResponse('Invalid or missing EVM address')
+    }
+
+    try {
+      const state = await this.fetchClearinghouseState(address)
+      return this.createSuccessResponse(state.assetPositions.map((ap) => this.transformPosition(ap)))
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch positions'
+      )
+    }
+  }
+
+  async getSpotBalances(query?: AddressQuery): Promise<ExchangeResponse<SpotBalance[]>> {
+    const address = query?.address
+    if (!address || !isValidEvmAddress(address)) {
+      return this.createErrorResponse('Invalid or missing EVM address')
+    }
+
+    try {
+      // perp 담보와 spot 잔고는 별도 계정 (perp accountValue와 이중 계상되지 않음)
+      const state = await this.post<TxFlowSpotClearinghouseState>({
+        type: 'spotClearinghouseState',
+        user: address,
+      })
+
+      const spotBalances: SpotBalance[] = (state.balances || [])
+        .filter((b) => parseFloat(b.total) !== 0)
+        .map((b) => ({ symbol: b.coin, balance: b.total, lockedBalance: b.hold || '0' }))
+
+      return this.createSuccessResponse(spotBalances)
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch spot balances'
+      )
+    }
+  }
+
+  async getAccountBalance(query?: AddressQuery): Promise<ExchangeResponse<AccountBalance>> {
+    const address = query?.address
+    if (!address || !isValidEvmAddress(address)) {
+      return this.createErrorResponse('Invalid or missing EVM address')
+    }
+
+    try {
+      const state = await this.fetchClearinghouseState(address)
+      const ms = state.marginSummary
+      let unrealizedPnl = 0
+      for (const ap of state.assetPositions) {
+        unrealizedPnl += parseFloat(ap.position.unrealizedPnl) || 0
+      }
+
+      return this.createSuccessResponse({
+        exchange: this.exchangeId,
+        totalEquity: parseFloat(ms.accountValue) || 0,
+        availableBalance: parseFloat(state.withdrawable || '0') || 0,
+        usedMargin: parseFloat(ms.totalMarginUsed) || 0,
+        unrealizedPnl,
+      })
+    } catch (error) {
+      return this.createErrorResponse(
+        error instanceof Error ? error.message : 'Failed to fetch account balance'
+      )
+    }
+  }
+
+  private transformPosition(ap: TxFlowAssetPosition): Position {
+    const pos = ap.position
+    const szi = parseFloat(pos.szi)
+    const side = szi > 0 ? 'long' : 'short'
+    // coin은 "BTC-USDC" 형태
+    const baseAsset = pos.coin.replace(/-USDC$/, '')
+    const market = `${baseAsset}-PERP`
+    const tpsl = ap.tpsl?.[0]
+
+    return {
+      id: generatePositionId(this.exchangeId, market, side),
+      exchange: this.exchangeId,
+      market,
+      baseAsset,
+      side,
+      size: Math.abs(szi),
+      sizeUsd: Math.abs(parseFloat(pos.positionValue)),
+      entryPrice: parseFloat(pos.entryPx),
+      markPrice: parseFloat(pos.markPx),
+      unrealizedPnl: parseFloat(pos.unrealizedPnl),
+      // Hyperliquid와 달리 이미 퍼센트 단위
+      unrealizedPnlPercent: parseFloat(pos.returnOnEquity) || 0,
+      leverage: pos.leverage?.value || 1,
+      liquidationPrice: pos.liquidationPx ? parseFloat(pos.liquidationPx) : null,
+      stopLoss: tpsl?.slTriggerPrice ? parseFloat(tpsl.slTriggerPrice) : null,
+      takeProfit: tpsl?.tpTriggerPrice ? parseFloat(tpsl.tpTriggerPrice) : null,
+      margin: parseFloat(pos.marginUsed),
+      marginRatio: null,
+      createdAt: null,
+      updatedAt: new Date(),
+    }
+  }
+}
