@@ -14,6 +14,7 @@ Perpetual DEX 거래소들의 포지션과 잔고를 통합 인터페이스로 �
 | GRVT | API Key (Session) | `apiKey`, `apiSecret`, `tradingAccountId` |
 | Extended | API Key | `apiKey`, `apiSecret` |
 | StandX | JWT Token | `jwtToken` |
+| TxFlow | Wallet Address | - |
 
 ## Installation
 
@@ -40,7 +41,7 @@ if (positions.success) {
 
 ### Address-based Exchanges
 
-Hyperliquid, Pacifica, Lighter는 지갑 주소만으로 조회 가능합니다. 별도의 인증 설정이 필요 없습니다.
+Hyperliquid, Pacifica, Lighter, TxFlow는 지갑 주소만으로 조회 가능합니다. 별도의 인증 설정이 필요 없습니다.
 
 ```typescript
 import { createClient } from '@chkdmin/perpdex-sdk'
@@ -56,7 +57,13 @@ const result = await pacifica.getPositions({ address: 'YourSolanaAddress' })
 // Lighter (EVM address) - config 없이 address만으로 조회
 const lighter = createClient('lighter')
 const result = await lighter.getPositions({ address: '0xYourEvmAddress' })
+
+// TxFlow (EVM address)
+const txflow = createClient('txflow')
+const result = await txflow.getPositions({ address: '0xYourEvmAddress' })
 ```
+
+> **Note:** TxFlow는 공식 API 문서가 아직 없어 app.txflow.com이 사용하는 Hyperliquid 호환 `/info` 엔드포인트를 사용합니다. 예고 없이 변경될 수 있습니다.
 
 > **Note:** Lighter의 address-only 모드에서는 포지션과 잔고가 조회되지만 SL/TP 주문은 조회되지 않습니다.
 > SL/TP까지 필요하면 아래 Config 모드를 사용하세요.

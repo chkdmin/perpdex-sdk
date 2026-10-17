@@ -7,6 +7,7 @@ import { PacificaClient } from './exchanges/pacifica'
 import { GrvtClient } from './exchanges/grvt'
 import { ExtendedClient } from './exchanges/extended'
 import { StandXClient } from './exchanges/standx'
+import { TxFlowClient } from './exchanges/txflow'
 
 export function createClient<T extends ExchangeId>(
   exchangeId: T,
@@ -35,6 +36,8 @@ export function createClient<T extends ExchangeId>(
       return new ExtendedClient(config as any)
     case 'standx':
       return new StandXClient(config as any)
+    case 'txflow':
+      return new TxFlowClient()
     default:
       throw new Error(`Unknown exchange: ${exchangeId}`)
   }

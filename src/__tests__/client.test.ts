@@ -25,4 +25,9 @@ describe('createClient', () => {
     const client = createClient('extended', { apiKey: 'key', apiSecret: 'secret' })
     expect(client.exchangeId).toBe('extended')
   })
+
+  it('creates TxFlow client without config', () => {
+    const client = createClient('txflow')
+    expect(client.exchangeId).toBe('txflow')
+  })
 })
