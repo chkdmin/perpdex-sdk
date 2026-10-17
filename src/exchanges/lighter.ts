@@ -3,6 +3,7 @@ import { BaseClient } from '../base/base-client'
 import { generatePositionId, isValidEvmAddress } from '../utils'
 
 const LIGHTER_API_BASE = 'https://mainnet.zklighter.elliot.ai'
+const LIGHTER_ACCOUNT_NOT_FOUND_CODE = 21100
 
 interface LighterAccountResponse {
   code: number
@@ -152,6 +153,11 @@ export class LighterClient extends BaseClient {
       : await this.fetchWithAuth(url)
 
     if (!response.ok) {
+      // 계정이 없는 주소는 400 + code 21100 — 호출부의 code !== 200 분기에서 잔고 0/빈 포지션으로 처리된다
+      if (response.status === 400) {
+        const body = await response.json().catch(() => null)
+        if (body?.code === LIGHTER_ACCOUNT_NOT_FOUND_CODE) return body
+      }
       throw new Error(`Lighter API error: ${response.status}`)
     }
 

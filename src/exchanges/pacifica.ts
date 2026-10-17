@@ -173,6 +173,19 @@ export class PacificaClient extends BaseClient {
       )
 
       if (!response.ok) {
+        // 계정이 없는 주소는 404 'Account not found' — 장애가 아니라 잔고 0
+        if (response.status === 404) {
+          const body = await response.json().catch(() => null)
+          if (body?.error === 'Account not found') {
+            return this.createSuccessResponse({
+              exchange: this.exchangeId,
+              totalEquity: 0,
+              availableBalance: 0,
+              usedMargin: 0,
+              unrealizedPnl: 0,
+            })
+          }
+        }
         throw new Error(`Pacifica API error: ${response.status}`)
       }
 
