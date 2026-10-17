@@ -4,6 +4,8 @@ import { generatePositionId, isValidEvmAddress } from '../utils'
 
 // 공식 API 문서 미공개 — app.txflow.com이 사용하는 Hyperliquid 호환 /info 엔드포인트
 const TXFLOW_API_BASE = 'https://api.txflow.com'
+// 응답 없이 멈춘 요청이 소비자의 순차 sync 루프를 막지 않도록 본문 수신까지 포함해 끊는다
+const TXFLOW_REQUEST_TIMEOUT_MS = 15_000
 
 interface TxFlowAssetPosition {
   position: {
@@ -37,6 +39,15 @@ interface TxFlowSpotClearinghouseState {
   balances: { coin: string; total: string; hold: string }[]
 }
 
+// 형식이 깨진 200 응답을 0으로 바꿔 성공 처리하면 소비자가 기존 자산을 지우므로 실패로 던진다
+function requireNumber(value: unknown, field: string): number {
+  const parsed = typeof value === 'string' || typeof value === 'number' ? parseFloat(String(value)) : NaN
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Unexpected TxFlow response: invalid ${field}`)
+  }
+  return parsed
+}
+
 export class TxFlowClient extends BaseClient {
   readonly exchangeId: ExchangeId = 'txflow'
 
@@ -47,6 +58,7 @@ export class TxFlowClient extends BaseClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TXFLOW_REQUEST_TIMEOUT_MS),
     })
 
     if (!response.ok) {
@@ -65,6 +77,12 @@ export class TxFlowClient extends BaseClient {
     if (inflight) return inflight
 
     const request = this.post<TxFlowClearinghouseState>({ type: 'clearinghouseState', user: address })
+      .then((state) => {
+        if (!Array.isArray(state?.assetPositions) || !state.marginSummary) {
+          throw new Error('Unexpected TxFlow response: missing clearinghouseState fields')
+        }
+        return state
+      })
       .finally(() => this.inflightStates.delete(key))
     this.inflightStates.set(key, request)
     return request
@@ -99,7 +117,11 @@ export class TxFlowClient extends BaseClient {
         user: address,
       })
 
-      const spotBalances: SpotBalance[] = (state.balances || [])
+      if (!Array.isArray(state?.balances)) {
+        throw new Error('Unexpected TxFlow response: missing balances')
+      }
+
+      const spotBalances: SpotBalance[] = state.balances
         .filter((b) => parseFloat(b.total) !== 0)
         .map((b) => ({ symbol: b.coin, balance: b.total, lockedBalance: b.hold || '0' }))
 
@@ -127,7 +149,7 @@ export class TxFlowClient extends BaseClient {
 
       return this.createSuccessResponse({
         exchange: this.exchangeId,
-        totalEquity: parseFloat(ms.accountValue) || 0,
+        totalEquity: requireNumber(ms.accountValue, 'accountValue'),
         availableBalance: parseFloat(state.withdrawable || '0') || 0,
         usedMargin: parseFloat(ms.totalMarginUsed) || 0,
         unrealizedPnl,
@@ -141,7 +163,7 @@ export class TxFlowClient extends BaseClient {
 
   private transformPosition(ap: TxFlowAssetPosition): Position {
     const pos = ap.position
-    const szi = parseFloat(pos.szi)
+    const szi = requireNumber(pos.szi, 'szi')
     const side = szi > 0 ? 'long' : 'short'
     // coin은 "BTC-USDC" 형태
     const baseAsset = pos.coin.replace(/-USDC$/, '')
@@ -155,17 +177,17 @@ export class TxFlowClient extends BaseClient {
       baseAsset,
       side,
       size: Math.abs(szi),
-      sizeUsd: Math.abs(parseFloat(pos.positionValue)),
-      entryPrice: parseFloat(pos.entryPx),
-      markPrice: parseFloat(pos.markPx),
-      unrealizedPnl: parseFloat(pos.unrealizedPnl),
+      sizeUsd: Math.abs(requireNumber(pos.positionValue, 'positionValue')),
+      entryPrice: requireNumber(pos.entryPx, 'entryPx'),
+      markPrice: requireNumber(pos.markPx, 'markPx'),
+      unrealizedPnl: requireNumber(pos.unrealizedPnl, 'unrealizedPnl'),
       // Hyperliquid와 달리 이미 퍼센트 단위
       unrealizedPnlPercent: parseFloat(pos.returnOnEquity) || 0,
       leverage: pos.leverage?.value || 1,
       liquidationPrice: pos.liquidationPx ? parseFloat(pos.liquidationPx) : null,
       stopLoss: tpsl?.slTriggerPrice ? parseFloat(tpsl.slTriggerPrice) : null,
       takeProfit: tpsl?.tpTriggerPrice ? parseFloat(tpsl.tpTriggerPrice) : null,
-      margin: parseFloat(pos.marginUsed),
+      margin: requireNumber(pos.marginUsed, 'marginUsed'),
       marginRatio: null,
       createdAt: null,
       updatedAt: new Date(),
