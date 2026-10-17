@@ -251,3 +251,50 @@ describe('TxFlow getSpotBalances', () => {
     expect(result.success).toBe(false)
   })
 })
+
+describe('TxFlow clearinghouseState 요청 공유', () => {
+  beforeEach(() => mockFetch.mockReset())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('잔고와 포지션을 동시에 조회하면 clearinghouseState 요청은 한 번만 보낸다', async () => {
+    mockFetch.mockImplementation(() => jsonResponse(clearinghouseState))
+    const client = new TxFlowClient()
+
+    const [balance, positions] = await Promise.all([
+      client.getAccountBalance({ address: ADDR }),
+      client.getPositions({ address: ADDR }),
+    ])
+
+    expect(balance.data!.totalEquity).toBe(5502.976341)
+    expect(positions.data).toHaveLength(2)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('이전 요청이 끝난 뒤의 조회는 새로 요청한다 (결과를 캐시하지 않음)', async () => {
+    mockFetch.mockImplementation(() => jsonResponse(clearinghouseState))
+    const client = new TxFlowClient()
+
+    await client.getAccountBalance({ address: ADDR })
+    await client.getPositions({ address: ADDR })
+
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('실패한 요청도 공유하고, 이후 조회는 다시 시도한다', async () => {
+    mockFetch.mockImplementationOnce(() => errorResponse(500, 'boom'))
+    const client = new TxFlowClient()
+
+    const [balance, positions] = await Promise.all([
+      client.getAccountBalance({ address: ADDR }),
+      client.getPositions({ address: ADDR }),
+    ])
+    expect(balance.success).toBe(false)
+    expect(positions.success).toBe(false)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+
+    mockFetch.mockImplementation(() => jsonResponse(clearinghouseState))
+    const retried = await client.getAccountBalance({ address: ADDR })
+    expect(retried.success).toBe(true)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+})
