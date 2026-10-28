@@ -8,6 +8,7 @@ export type ExchangeId =
   | 'extended'
   | 'standx'
   | 'txflow'
+  | 'arcus'
 
 export type PositionSide = 'long' | 'short'
 
@@ -95,6 +96,7 @@ export interface ExchangeConfigMap {
   extended: ExtendedConfig
   standx: StandXConfig
   txflow: undefined
+  arcus: undefined
 }
 
 export interface SpotBalance {

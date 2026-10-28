@@ -30,4 +30,9 @@ describe('createClient', () => {
     const client = createClient('txflow')
     expect(client.exchangeId).toBe('txflow')
   })
+
+  it('creates Arcus client without config', () => {
+    const client = createClient('arcus')
+    expect(client.exchangeId).toBe('arcus')
+  })
 })

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LighterClient } from '../exchanges/lighter'
 import { PacificaClient } from '../exchanges/pacifica'
 import { ExtendedClient } from '../exchanges/extended'
+import { ArcusClient } from '../exchanges/arcus'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
@@ -97,6 +98,35 @@ describe('Extended: 잔고가 0인 계정', () => {
   it('서버 에러는 그대로 실패한다', async () => {
     mockFetch.mockImplementation(() => response(500, { status: 'ERROR' }))
     const result = await new ExtendedClient({ apiKey: 'key', apiSecret: '' }).getAccountBalance()
+
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('Arcus: 활동 이력이 없는 계정', () => {
+  // 실제 응답: HTTP 404 {"error":"this account has no activity yet"}
+  const noActivity = () => response(404, { error: 'this account has no activity yet' })
+
+  it('getAccountBalance는 잔고 0으로 성공한다', async () => {
+    mockFetch.mockImplementation(noActivity)
+    const result = await new ArcusClient().getAccountBalance({ address: EVM_ADDR })
+
+    expect(result.success).toBe(true)
+    expect(result.data).toMatchObject({ totalEquity: 0, availableBalance: 0, usedMargin: 0, unrealizedPnl: 0 })
+  })
+
+  it('getPositions는 빈 배열로 성공하고 openOrders는 요청하지 않는다', async () => {
+    mockFetch.mockImplementation(noActivity)
+    const result = await new ArcusClient().getPositions({ address: EVM_ADDR })
+
+    expect(result.success).toBe(true)
+    expect(result.data).toEqual([])
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('다른 404는 그대로 실패한다', async () => {
+    mockFetch.mockImplementation(() => response(404, { error: 'Not found' }))
+    const result = await new ArcusClient().getAccountBalance({ address: EVM_ADDR })
 
     expect(result.success).toBe(false)
   })
