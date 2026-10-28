@@ -8,6 +8,7 @@ import { GrvtClient } from './exchanges/grvt'
 import { ExtendedClient } from './exchanges/extended'
 import { StandXClient } from './exchanges/standx'
 import { TxFlowClient } from './exchanges/txflow'
+import { ArcusClient } from './exchanges/arcus'
 
 export function createClient<T extends ExchangeId>(
   exchangeId: T,
@@ -38,6 +39,8 @@ export function createClient<T extends ExchangeId>(
       return new StandXClient(config as any)
     case 'txflow':
       return new TxFlowClient()
+    case 'arcus':
+      return new ArcusClient()
     default:
       throw new Error(`Unknown exchange: ${exchangeId}`)
   }

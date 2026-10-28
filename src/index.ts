@@ -30,6 +30,7 @@ export { GrvtClient } from './exchanges/grvt'
 export { ExtendedClient } from './exchanges/extended'
 export { StandXClient } from './exchanges/standx'
 export { TxFlowClient } from './exchanges/txflow'
+export { ArcusClient } from './exchanges/arcus'
 
 // Utilities
 export { isValidEvmAddress, isValidSolanaAddress } from './utils'

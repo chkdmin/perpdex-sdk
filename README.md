@@ -15,6 +15,7 @@ Perpetual DEX 거래소들의 포지션과 잔고를 통합 인터페이스로 �
 | Extended | API Key | `apiKey`, `apiSecret` |
 | StandX | JWT Token | `jwtToken` |
 | TxFlow | Wallet Address | - |
+| Arcus | Wallet Address | - |
 
 ## Installation
 
@@ -41,7 +42,7 @@ if (positions.success) {
 
 ### Address-based Exchanges
 
-Hyperliquid, Pacifica, Lighter, TxFlow는 지갑 주소만으로 조회 가능합니다. 별도의 인증 설정이 필요 없습니다.
+Hyperliquid, Pacifica, Lighter, TxFlow, Arcus는 지갑 주소만으로 조회 가능합니다. 별도의 인증 설정이 필요 없습니다.
 
 ```typescript
 import { createClient } from '@chkdmin/perpdex-sdk'
@@ -61,9 +62,15 @@ const result = await lighter.getPositions({ address: '0xYourEvmAddress' })
 // TxFlow (EVM address)
 const txflow = createClient('txflow')
 const result = await txflow.getPositions({ address: '0xYourEvmAddress' })
+
+// Arcus (EVM address)
+const arcus = createClient('arcus')
+const result = await arcus.getPositions({ address: '0xYourEvmAddress' })
 ```
 
 > **Note:** TxFlow는 공식 API 문서가 아직 없어 app.txflow.com이 사용하는 Hyperliquid 호환 `/info` 엔드포인트를 사용합니다. 예고 없이 변경될 수 있습니다.
+
+> **Note:** Arcus는 기본 계정(`accountIndex` 0)만 조회합니다. 응답에 청산가가 없어 `liquidationPrice`는 항상 `null`입니다. 초대 코드로 perp 접근 권한을 받지 않은 주소는 403(`address not on access whitelist`)으로 실패합니다.
 
 > **Note:** Lighter의 address-only 모드에서는 포지션과 잔고가 조회되지만 SL/TP 주문은 조회되지 않습니다.
 > SL/TP까지 필요하면 아래 Config 모드를 사용하세요.
